@@ -8,7 +8,7 @@ export const kMeansSegmentation = (imageData: ImageData, k: number): {
   const labels = new Array(data.length / 4).fill(0);
   
   // Improved k-means++ initialization
-  const centroids: number[][] = [];
+  let centroids: number[][] = [];
   const pixels: number[][] = [];
   
   // Extract pixels and convert to LAB color space
