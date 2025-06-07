@@ -80,3 +80,20 @@ export const kMeansSegmentation = (imageData: ImageData, k: number): {
 
 const euclideanDistance = (a: number[], b: number[]) => 
   Math.sqrt(a.reduce((sum, val, i) => sum + (val - b[i]) ** 2, 0));
+
+export const meanShiftSegmentation = (imageData: ImageData) => {
+    // Implementation needed
+    return {
+        imageData: new ImageData(imageData.width, imageData.height),
+        labels: [],
+        bandwidth: 0
+    };
+};
+
+export const watershedSegmentation = (imageData: ImageData) => {
+    // Implementation needed
+    return {
+        imageData: new ImageData(imageData.width, imageData.height),
+        markers: []
+    };
+};
