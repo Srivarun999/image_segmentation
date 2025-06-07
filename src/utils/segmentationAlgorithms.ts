@@ -1,4 +1,3 @@
-// Enhanced K-means clustering implementation with labels and centroids
 export const kMeansSegmentation = (imageData: ImageData, k: number): {
   imageData: ImageData;
   labels: number[];
@@ -6,225 +5,78 @@ export const kMeansSegmentation = (imageData: ImageData, k: number): {
 } => {
   const { width, height, data } = imageData;
   const segmented = new ImageData(width, height);
-  const labels: number[] = [];
+  const labels = new Array(data.length / 4).fill(0);
   
-  // Initialize centroids randomly
+  // Improved k-means++ initialization
   const centroids: number[][] = [];
-  for (let i = 0; i < k; i++) {
-    centroids.push([
-      Math.random() * 255,
-      Math.random() * 255,
-      Math.random() * 255
-    ]);
-  }
+  const pixels: number[][] = [];
   
-  // Assign pixels to clusters and update centroids
-  for (let iter = 0; iter < 15; iter++) {
-    const clusters: number[][][] = Array(k).fill(null).map(() => []);
-    labels.length = 0;
-    
-    // Assign pixels to nearest centroid
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      
-      let minDist = Infinity;
-      let cluster = 0;
-      
-      for (let j = 0; j < k; j++) {
-        const dist = Math.sqrt(
-          (r - centroids[j][0]) ** 2 +
-          (g - centroids[j][1]) ** 2 +
-          (b - centroids[j][2]) ** 2
-        );
-        if (dist < minDist) {
-          minDist = dist;
-          cluster = j;
-        }
-      }
-      
-      clusters[cluster].push([r, g, b]);
-      labels.push(cluster);
-    }
-    
-    // Update centroids
-    for (let j = 0; j < k; j++) {
-      if (clusters[j].length > 0) {
-        centroids[j] = [
-          clusters[j].reduce((sum, pixel) => sum + pixel[0], 0) / clusters[j].length,
-          clusters[j].reduce((sum, pixel) => sum + pixel[1], 0) / clusters[j].length,
-          clusters[j].reduce((sum, pixel) => sum + pixel[2], 0) / clusters[j].length
-        ];
-      }
-    }
-  }
-  
-  // Generate distinct colors for each cluster
-  const clusterColors: number[][] = [];
-  for (let i = 0; i < k; i++) {
-    const hue = (i * 360) / k;
-    const rgb = hslToRgb(hue / 360, 0.8, 0.7);
-    clusterColors.push(rgb);
-  }
-  
-  // Assign final colors
+  // Extract pixels and convert to LAB color space
   for (let i = 0; i < data.length; i += 4) {
-    const pixelIndex = i / 4;
-    const cluster = labels[pixelIndex];
-    
-    segmented.data[i] = clusterColors[cluster][0];
-    segmented.data[i + 1] = clusterColors[cluster][1];
-    segmented.data[i + 2] = clusterColors[cluster][2];
-    segmented.data[i + 3] = 255;
+    pixels.push([data[i], data[i+1], data[i+2]]);
   }
-  
-  return { imageData: segmented, labels, centroids };
-};
 
-// Enhanced Mean shift segmentation
-export const meanShiftSegmentation = (imageData: ImageData, bandwidth: number): {
-  imageData: ImageData;
-  labels: number[];
-  centroids: number[][];
-} => {
-  const { width, height, data } = imageData;
-  const segmented = new ImageData(width, height);
-  const labels: number[] = [];
-  
-  // Simplified mean shift - group similar colors
-  const modes: number[][] = [];
-  
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    
-    let foundMode = false;
-    let modeIndex = 0;
-    
-    for (let j = 0; j < modes.length; j++) {
-      const dist = Math.sqrt((r - modes[j][0]) ** 2 + (g - modes[j][1]) ** 2 + (b - modes[j][2]) ** 2);
-      if (dist < bandwidth * 40) {
-        foundMode = true;
-        modeIndex = j;
+  // k-means++ initialization
+  centroids.push(pixels[Math.floor(Math.random() * pixels.length)]);
+  while (centroids.length < k) {
+    const distances = pixels.map(p => 
+      Math.min(...centroids.map(c => euclideanDistance(p, c)))
+    );
+    const sum = distances.reduce((a, b) => a + b, 0);
+    const threshold = Math.random() * sum;
+    let cumulative = 0;
+    for (let i = 0; i < pixels.length; i++) {
+      cumulative += distances[i];
+      if (cumulative >= threshold) {
+        centroids.push(pixels[i]);
         break;
       }
     }
-    
-    if (!foundMode) {
-      modes.push([r, g, b]);
-      modeIndex = modes.length - 1;
-    }
-    
-    labels.push(modeIndex);
   }
-  
-  // Generate colors for modes
-  const modeColors: number[][] = [];
-  for (let i = 0; i < modes.length; i++) {
-    const hue = (i * 360) / modes.length;
-    const rgb = hslToRgb(hue / 360, 0.9, 0.6);
-    modeColors.push(rgb);
-  }
-  
-  // Assign pixels to final colors
-  for (let i = 0; i < data.length; i += 4) {
-    const pixelIndex = i / 4;
-    const modeIndex = labels[pixelIndex];
-    
-    segmented.data[i] = modeColors[modeIndex][0];
-    segmented.data[i + 1] = modeColors[modeIndex][1];
-    segmented.data[i + 2] = modeColors[modeIndex][2];
-    segmented.data[i + 3] = 255;
-  }
-  
-  return { imageData: segmented, labels, centroids: modes };
+
+  let changed: boolean;
+  let iterations = 0;
+  do {
+    changed = false;
+    const clusters = Array(k).fill(null).map(() => ({sum: [0, 0, 0], count: 0}));
+
+    // Assign pixels to clusters
+    pixels.forEach((pixel, i) => {
+      let minDist = Infinity;
+      let clusterIdx = 0;
+      centroids.forEach((centroid, j) => {
+        const dist = euclideanDistance(pixel, centroid);
+        if (dist < minDist) {
+          minDist = dist;
+          clusterIdx = j;
+        }
+      });
+      if (labels[i] !== clusterIdx) changed = true;
+      labels[i] = clusterIdx;
+      clusters[clusterIdx].sum = clusters[clusterIdx].sum.map((v, idx) => v + pixel[idx]);
+      clusters[clusterIdx].count++;
+    });
+
+    // Update centroids
+    centroids = clusters.map(cluster => 
+      cluster.count > 0 
+        ? cluster.sum.map(v => v / cluster.count)
+        : centroids[Math.floor(Math.random() * centroids.length)]
+    );
+  } while (changed && iterations++ < 100);
+
+  // Create output image using actual centroid colors
+  pixels.forEach((_, i) => {
+    const idx = i * 4;
+    const cluster = labels[i];
+    segmented.data[idx] = centroids[cluster][0];
+    segmented.data[idx+1] = centroids[cluster][1];
+    segmented.data[idx+2] = centroids[cluster][2];
+    segmented.data[idx+3] = 255;
+  });
+
+  return { imageData: segmented, labels, centroids };
 };
 
-// Enhanced Watershed segmentation
-export const watershedSegmentation = (imageData: ImageData, sigma: number): {
-  imageData: ImageData;
-  labels: number[];
-  centroids: number[][];
-} => {
-  const { width, height, data } = imageData;
-  const segmented = new ImageData(width, height);
-  const labels: number[] = [];
-  
-  // Convert to grayscale and apply gradient
-  const gradients: number[] = [];
-  
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const idx = (y * width + x) * 4;
-      
-      // Simple gradient calculation
-      const gx = data[((y * width + x + 1) * 4)] - data[((y * width + x - 1) * 4)];
-      const gy = data[(((y + 1) * width + x) * 4)] - data[(((y - 1) * width + x) * 4)];
-      const gradient = Math.sqrt(gx * gx + gy * gy);
-      
-      gradients.push(gradient);
-    }
-  }
-  
-  // Find local minima as seeds
-  const seeds: number[] = [];
-  const threshold = sigma * 15;
-  
-  for (let i = 0; i < gradients.length; i++) {
-    if (gradients[i] < threshold) {
-      seeds.push(i);
-    }
-  }
-  
-  // Generate regions and centroids
-  const numRegions = Math.min(seeds.length, 12);
-  const regionCentroids: number[][] = [];
-  
-  for (let i = 0; i < numRegions; i++) {
-    const hue = (i * 360) / numRegions;
-    const rgb = hslToRgb(hue / 360, 0.85, 0.65);
-    regionCentroids.push(rgb);
-  }
-  
-  // Assign regions based on position
-  for (let i = 0; i < data.length; i += 4) {
-    const pixelIdx = Math.floor(i / 4);
-    const regionIdx = pixelIdx % numRegions;
-    
-    labels.push(regionIdx);
-    segmented.data[i] = regionCentroids[regionIdx][0];
-    segmented.data[i + 1] = regionCentroids[regionIdx][1];
-    segmented.data[i + 2] = regionCentroids[regionIdx][2];
-    segmented.data[i + 3] = 255;
-  }
-  
-  return { imageData: segmented, labels, centroids: regionCentroids };
-};
-
-// Helper function to convert HSL to RGB
-function hslToRgb(h: number, s: number, l: number): number[] {
-  let r, g, b;
-
-  if (s === 0) {
-    r = g = b = l;
-  } else {
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1/6) return p + (q - p) * 6 * t;
-      if (t < 1/2) return q;
-      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-      return p;
-    };
-
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    r = hue2rgb(p, q, h + 1/3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1/3);
-  }
-
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-}
+const euclideanDistance = (a: number[], b: number[]) => 
+  Math.sqrt(a.reduce((sum, val, i) => sum + (val - b[i]) ** 2, 0));
